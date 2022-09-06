@@ -1,0 +1,4 @@
+can==0.0.0
+pypiwin32==223
+python-can==4.0.0
+pywin32==304
