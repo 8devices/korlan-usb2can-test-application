@@ -7,9 +7,10 @@ A GUI application for basic "8 devices" Korlan USB2CAN operations testing over C
 1. Install the Korlan USB2CAN driver. It can be downloaded from: https://www.8devices.com/media/products/usb2can_korlan/downloads/usb2can_winusb.msi.
 2. Clone korlan-usb2can-test-application repository.
 3. Install python 3.10: https://www.python.org/downloads/release/python-3105/.
-4. Install required python libraries with command `pip install -r requirements.txt`.
+4. Go to the cloned directory and install required python libraries with command `pip install -r requirements.txt`.
 5. Python requires a CANAL DLL library for USB2CAN interface, which has to be put into the same directory as python files. It is provided in this repository.
 6. Also, you will need to make some changes in *can.interfaces.usb2can.usb2canabstractionlayer* library, which was installed using pip with *python-can* package. Adjusted *usb2canabstractionlayer.py* file is provided in this repository.
+7. Run the program using `py kcan.py` command.
 
 ## Installation for Linux (Ubuntu)
 
@@ -27,7 +28,10 @@ After that, you will have to install needed libraries using the following comman
 sudo apt-get install python3-tk
 sudo apt install python3-can
 sudo apt install net-tools
-sudo /bin/python.3.9 -m pip install pysocketcan==0.0.2
+sudo /bin/python3.9 -m pip install pysocketcan==0.0.2
+sudo /bin/python3.9 -m pip install pillow==9.3.0
+sudo /bin/python3.9 -m pip install matplotlib==3.6.2
+sudo /bin/python3.9 -m pip install ttkbootstrap==1.10.1
 ```
 
 Also, you will have to clone korlan-usb2can-test-application repository.
