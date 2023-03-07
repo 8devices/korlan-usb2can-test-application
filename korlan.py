@@ -12,6 +12,8 @@ elif platform.system() == "Linux":
 if OS == 'Windows':
     import win32com.client
 
+
+if OS == 'Windows':
     def get_usb_ids(usb_VIDPID = "VID_0483&PID_1234"): # Korlan VID_0483&PID_1234
         usb_ids = []
         wmi = win32com.client.GetObject ("winmgmts:")
@@ -20,33 +22,32 @@ if OS == 'Windows':
                 usb_ids.append(usb.Dependent.split('\\\\')[-1][:-1])
         return usb_ids
 
-   
-    def get_bus(bus, id='D3365AFB', rate=1000000, bus_flags=0, dll_path='./usb2can.dll'):
+    def get_bus(bus, id='D3365AFB', rate=1000000, bus_flags=0, dll_path='./usb2can.dll', filters=[]):
         # vendor string example: '2.4;2.0;2.0.0;2.0.0;8devices.com'
         if bus != None:
             bus.shutdown()
-        bus = can.interface.Bus(bustype="usb2can", channel=id, bitrate=rate, dll=dll_path, flags=bus_flags)
+        bus = can.interface.Bus(bustype="usb2can", channel=id, bitrate=rate, dll=dll_path,
+                                flags=bus_flags, can_filters=filters)
         try:
-            vs_pointer = bus.can.get_vendor_string() # Function returns bytes type value (pointer to a vendor string). It needs to be decoded to string.
-            #print(type(vs_pointer), vs_pointer)
-            vendor_string = vs_pointer.decode()#.rstrip('\x00')
+            # Function returns bytes type value (pointer to a vendor string). It needs to be decoded to string.
+            vs_pointer = bus.can.get_vendor_string()
+            vendor_string = vs_pointer.decode()
         except Exception as e:
-            #print(f"Can't get vendor string. {e}")
             vendor_string = '2.x;2.x;2.x.x;2.x.x;8devices.com'
         vendor_list = vendor_string.replace(':', ';').split(';')
         explanation = ['Firmware version','Hardware version','Canal version','DLL version','Device vendor']
         return bus, zip(explanation, vendor_list)
 
 elif OS == 'Linux':
-    import pysocketcan as pysc
     def get_usb2can_devices():
         usb_devices_info = [] # Processed usb-devices data. 2D list.
         global usb2can_devices
         usb2can_devices = []
 
         usb_devices_string = str(subprocess.run(["usb-devices"], stdout=subprocess.PIPE))  # usb-devices command output.
-        usb_devices_list = usb_devices_string.split(r'\n\n')  # usb-devices output devided to list, where one item describes one device.
-        
+        # usb-devices output devided to list, where one item describes one device.
+        usb_devices_list = usb_devices_string.split(r'\n\n')
+
         for block in usb_devices_list:
             new_block = []
             list_of_rows = re.split(r"[TDPSCI]:  ", block)  # Each device information block is devided into rows.
@@ -63,34 +64,38 @@ elif OS == 'Linux':
 
     def get_usb_ids():
         get_usb2can_devices()
-        usb2can_ids = {}  # Dictionary that this function returns. Key - korlan's serial number. Value - socketcan interface (can0; can1; etc.).
+        # Dictionary that this function returns.
+        # Key - korlan's serial number. Value - socketcan interface (can0; can1; etc.)
+        usb2can_ids = {}
         i = 0
         for korlan in usb2can_devices:
             usb2can_ids[korlan[5].split("SerialNumber=", 1)[1]] = 'can' + str(i)
             i = i + 1
         return usb2can_ids
 
-    def get_bus(bus, id='can0', new_rate=1000000, recv_own_msg=False, loopback=True):
-        if bus != None:
+    def get_bus(bus, id='can0', new_rate=1000000, is_listen_only=False, is_loopback=False, is_one_shot=False,
+                filters=None):
+        if bus is not None:
             bus.shutdown()
-        if "DOWN" in str(subprocess.run(['ip', 'addr', 'ls', 'dev', id], stdout=subprocess.PIPE)):
-            current_rate = 0
-        else:
-            current_rate = pysc.Interface(id).baud
-        if int(current_rate) != new_rate:
-            subprocess.run(['ip',  'link',  'set',  'down', id])
-            subprocess.run(['ip', 'link', 'set', id, 'type', 'can', 'bitrate', str(new_rate)])
-            subprocess.run(['ip', 'link', 'set', 'up', id])
-        bus = can.interface.Bus(
-            interface="socketcan", channel=id, receive_own_messages=recv_own_msg,
-            local_loopback=loopback) # Create socketcan bus interface
+        # if "DOWN" in str(subprocess.run(['ip', 'addr', 'ls', 'dev', id], stdout=subprocess.PIPE)):
+        #     current_rate = 0
+        # else:
+        #     current_rate = pysc.Interface(id).baud
+        # if int(current_rate) != new_rate:
+        listen_only_on_off = "on" if is_listen_only else "off"
+        loopback_on_off = "on" if is_loopback else "off"
+        oneshot_on_off = "on" if is_one_shot else "off"
+        subprocess.run(['ip',  'link',  'set',  'down', id])
+        subprocess.run(['ip', 'link', 'set', id, 'type', 'can', 'bitrate', str(new_rate), 'listen-only',
+                        listen_only_on_off, 'loopback', loopback_on_off, 'one-shot', oneshot_on_off])
+        subprocess.run(['ip', 'link', 'set', 'up', id])
+        bus = can.interface.Bus(interface="socketcan", channel=id, can_filters=filters) # Create socketcan bus interface
         vendor_list = []
         try:
-            device = int(id.split('can', 1)[1]) 
+            device = int(id.split('can', 1)[1])
             vendor_list.append(usb2can_devices[device][1].split(' ')[1]) # Get hardware version
             vendor_list.append(usb2can_devices[device][3].split('Manufacturer=', 1)[1]) # Get manufacturer
-        except Exception as e:
-            # print(f"Can't get vendor string. {e}")
+        except Exception:
             vendor_list = ['2.x', '8devices.com']
         explanation = ['Hardware version', 'Manufacturer']
         return bus, zip(explanation, vendor_list)
@@ -104,7 +109,8 @@ elif OS == 'Linux':
         rx_bytes = int(can_interface_statistics_string.split('bytes')[1].split()[0])
         tx_frames = int(can_interface_statistics_string.split('TX packets')[1].split()[0])
         tx_bytes = int(can_interface_statistics_string.split('bytes')[2].split()[0])
-        bus_overr = int(can_interface_statistics_string.split('overruns')[1].split()[0]) + int(can_interface_statistics_string.split('overruns')[2].split()[0])
+        bus_overr = int(can_interface_statistics_string.split('overruns')[1].split()[0]) + \
+                    int(can_interface_statistics_string.split('overruns')[2].split()[0])
         rx_err = int(can_interface_statistics_string.split('RX errors')[1].split()[0])
         tx_err = int(can_interface_statistics_string.split('TX errors')[1].split()[0])
 
@@ -124,10 +130,12 @@ elif OS == 'Linux':
 
         return rx_frames, rx_bytes, tx_frames, tx_bytes, bus_overr, rx_err, tx_err
 
-bit_rates = [1000,800,500,250,125,62.5,20,10]
+bit_rates = [1000, 800, 500, 250, 125, 62.5, 20, 10]
 bit_rates_menu = [f'{x} kbit/s' for x in bit_rates]
 
-def rx_msgs(bus, main_thread, stop, q):
+
+def rx_msgs(bus, main_thread, stop, q, obdii=False):
+    pid_reply = 0x7E8
     try:
         # print("RX startup")
         while True:
@@ -137,32 +145,34 @@ def rx_msgs(bus, main_thread, stop, q):
             msgl=[]
             msg = bus.recv(0.5)
             if msg is not None:
-                if msg.is_error_frame:
+                if msg.is_error_frame is True or obdii is True and msg.arbitration_id != pid_reply:
                     continue
-                msg_flags = f"{'X' if msg.is_extended_id else '.'}{'R' if msg.is_remote_frame else '.'}{'E' if msg.is_error_frame else '.'}"
-                #print('msgflag:',msg_flags)    
-                msgl.append('r')    #RX msg
+                msg_flags = f"{'X' if msg.is_extended_id else '.'}" \
+                            f"{'R' if msg.is_remote_frame else '.'}" \
+                            f"{'E' if msg.is_error_frame else '.'}"
+                msgl.append('r')  # RX msg
                 msgl.append(msg.timestamp)
                 msgl.append(msg_flags)
                 msgl.append(msg.arbitration_id)
                 msgl.append(msg.dlc)
                 msgl.append(msg.data)
                 q.put(msgl)
-                main_thread.event_generate('<<CAN_RX_event>>', when='tail') # Generate event so that received message would be shown in a Treeview
+                # Generate event so that received message would be shown in a Treeview
+                main_thread.event_generate('<<CAN_RX_event>>', when='tail')
     except Exception as e:
-        print(f"Korlan RX exception {e}",e)
+        print(f"Korlan RX exception {e}", e)
 
-    pass  # exit normally
 
 def tx_msg(bus, q, id, rem_data, ext_id):
-    #with can.ThreadSafeBus(bustype="usb2can", channel=id, bitrate = bit_rates[brate]*1000, dll='./usb2can.dll') as bus:
     try:
         msg = can.Message(arbitration_id = id, data=rem_data, is_extended_id=ext_id)
         bus.send(msg,0.5)
-        #print(f"Message sent on{t} {bus.channel_info}\n{msg}")
+        # print(f"Message sent on{t} {bus.channel_info}\n{msg}")
         msgl=[]
-        msg_flags = f"{'X' if msg.is_extended_id else '.'}{'R' if msg.is_remote_frame else '.'}{'E' if msg.is_error_frame else '.'}"
-        msgl.append('T')    #TX msg
+        msg_flags = f"{'X' if msg.is_extended_id else '.'}" \
+                    f"{'R' if msg.is_remote_frame else '.'}" \
+                    f"{'E' if msg.is_error_frame else '.'}"
+        msgl.append('T')  # TX msg
         msgl.append(msg.timestamp)
         msgl.append(msg_flags)
         msgl.append(msg.arbitration_id)
@@ -171,4 +181,3 @@ def tx_msg(bus, q, id, rem_data, ext_id):
         q.put(msgl)
     except can.CanError:
         print("Message NOT sent")
-        

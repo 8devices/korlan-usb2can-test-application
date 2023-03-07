@@ -200,3 +200,7 @@ class Usb2CanAbstractionLayer:
             vstr.restype = c_char_p
             return vstr()
 
+    def set_filters(self, handle, len, filters_arr):
+        with error_check("Failed to set filters"):
+            return CanalError(self.__m_dllBasic.CanalSetFilters(handle, len, filters_arr)) 
+
